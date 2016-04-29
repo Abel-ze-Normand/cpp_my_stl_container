@@ -13,11 +13,12 @@
 template<typename T>
 class block_vector {
 public:
+	// service exceprions
 	struct OverloadBlockException { };
 	struct OutOfBoundsException { };
 	struct EmptyBlockException { };
-
 	class block {
+	friend class block_vector;
 	public:
 		T* array;
 		int count;
@@ -33,6 +34,9 @@ public:
 			next = b.next;
 			prev = b.prev;
 		}
+		block(block* __n, block* __p) : next(__n), prev(__p) {
+			array = new T[MAXCOUNT];
+		};
 		block& operator=(const block & a) {
 			delete[] array;
 			array = new T[MAXCOUNT];
@@ -78,7 +82,7 @@ public:
 		}
 		void remove_at(int position) {
 			if (count > 1) {
-				delete(array[position]);
+				//delete &array[position];
 				for (int i = position; i < count; i++) {
 					array[i] = array[i + 1];
 				}
@@ -96,8 +100,25 @@ public:
 		}
 		~block() {
 			delete[] array;
+			if (self_destruct) {
+				if (next) {
+					next->self_destruct = true;
+					delete next;
+				}
+				return;
+			}
+			if (prev) {
+				prev->next = next;
+			}
+			if (next) {
+				next->prev = prev;
+			}
 		}
 	private:
+		bool self_destruct = false;
+		void activate_self_destruct() {
+			self_destruct = true;
+		}
 		void swap(block & s) {
 			std::swap(array, s.array);
 			std::swap(count, s.count);
@@ -105,11 +126,13 @@ public:
 			std::swap(prev, s.prev);
 		}
 	};
+	// container typedefs
 	typedef T value_type;
 	typedef T& reference;
 	typedef const T& const_reference;
 	typedef size_t size_type;
 	typedef block_vector self_type;
+
 	//iterators
 	class iterator {
 	public:
@@ -129,6 +152,15 @@ public:
 		iterator(const iterator & i) : ptr(i.ptr),
 			current_position(i.current_position), current_block(i.current_block) { };
 		~iterator() { };
+
+		self_type& operator=(const self_type& i) {
+			if (this != &i) {
+				current_position = i.current_position;
+				ptr = i.ptr;
+				current_block = i.current_block;
+			}
+			return *this;
+		}
 
 		self_type operator++(int stub) {
 			self_type i(*this);
@@ -153,14 +185,11 @@ public:
 			int i = b, c = current_position;
 			self_type mover(*this);
 			while (true) {
-				if (c + i > mover.current_block->count) {
-					c = 0;
+				if (c + i >= mover.current_block->count) {
 					i -= (mover.current_block->count - c);
+					c = 0;
 					if (mover.current_block->next) {
 						mover.current_block = mover.current_block->next;
-					}
-					else {
-						throw new OutOfBoundsException();
 					}
 				}
 				else {
@@ -176,8 +205,6 @@ public:
 				if (c - i < 0) {
 					if (mover.current_block->prev)
 						mover.current_block = mover.current_block->prev;
-					else
-						throw new OutOfBoundsException();
 					i -= c;
 					c = mover.current_block->count;
 				}
@@ -193,13 +220,12 @@ public:
 				if (mover.current_block != b.current_block) {
 					if (mover.current_block->prev)
 						mover.current_block = mover.current_block->prev;
-					else
-						throw new OutOfBoundsException();
 					accumulator += c;
 					c = mover.current_block->count;
 				}
-				else
-					return accumulator + c - b.current_position;
+				else {
+					return accumulator + c - b.current_position + 1;
+				}
 			}
 		}
 		reference operator*() {
@@ -290,7 +316,7 @@ public:
 			}
 		}
 		pointer move_back() {
-			if (--current_position > 0) {
+			if (--current_position >= 0) {
 				return ptr = &((*current_block)[current_position]);
 			}
 			else if (current_block->prev != 0) {
@@ -318,10 +344,18 @@ public:
 
 		const_iterator() : ptr(0), current_position(0), current_block(0) { };
 		const_iterator(pointer _ptr, int position, block* _bl) : ptr(_ptr), current_position(position), current_block(_bl) { };
-		const_iterator(const iterator & i) : ptr(i.ptr),
+		const_iterator(const const_iterator & i) : ptr(i.ptr),
 									   current_position(i.current_position), current_block(i.current_block) { };
-		~iterator() { };
+		~const_iterator() { };
 
+		self_type& operator=(const self_type & i) {
+			if (this != &i) {
+				current_position = i.current_position;
+				ptr = i.ptr;
+				current_block = i.current_block;
+			}
+			return *this;
+		}
 		self_type operator++(int stub) {
 			self_type i(*this);
 			ptr = move_next();
@@ -345,14 +379,11 @@ public:
 			int i = b, c = current_position;
 			self_type mover(*this);
 			while (true) {
-				if (c + i > mover.current_block->count) {
-					c = 0;
+				if (c + i >= mover.current_block->count) {
 					i -= (mover.current_block->count - c);
+					c = 0;
 					if (mover.current_block->next) {
 						mover.current_block = mover.current_block->next;
-					}
-					else {
-						throw new OutOfBoundsException();
 					}
 				}
 				else {
@@ -368,8 +399,6 @@ public:
 				if (c - i < 0) {
 					if (mover.current_block->prev)
 						mover.current_block = mover.current_block->prev;
-					else
-						throw new OutOfBoundsException();
 					i -= c;
 					c = mover.current_block->count;
 				}
@@ -383,21 +412,20 @@ public:
 			self_type mover(*this);
 			while (true) {
 				if (mover.current_block != b.current_block) {
-					if (mover.current_block->prev)
+					if (mover.current_block->prev) {
 						mover.current_block = mover.current_block->prev;
-					else
-						throw new OutOfBoundsException();
+					}
 					accumulator += c;
 					c = mover.current_block->count;
 				}
 				else
-					return accumulator + c - b.current_position;
+					return accumulator + c - b.current_position + 1;
 			}
 		}
-		reference operator*() {
+		reference operator*() const {
 			return *ptr;
 		}
-		pointer operator->() {
+		pointer operator->() const {
 			return ptr;
 		}
 		bool operator==(const self_type& a) const {
@@ -434,7 +462,7 @@ public:
 					return true;
 			}
 		}
-		bool operator<=(const self_type& a) const {
+			bool operator<=(const self_type& a) const {
 			return (*this == a || *this < a);
 		}
 		bool operator>=(const self_type& a) const {
@@ -453,7 +481,7 @@ public:
 			return *this;
 		}
 		// i'm not sure how to make random access right
-		reference operator[](int j) {
+		reference operator[](int j) const {
 			//rewind to begin??
 			self_type a(*this);
 
@@ -482,7 +510,7 @@ public:
 			}
 		}
 		pointer move_back() {
-			if (--current_position > 0) {
+			if (--current_position >= 0) {
 				return ptr = &((*current_block)[current_position]);
 			}
 			else if (current_block->prev != 0) {
@@ -496,47 +524,51 @@ public:
 		}
 	}; // end of const_iterator class
 	typedef std::reverse_iterator<iterator> reverse_iterator;
-	typedef std::reverse_iterator<const_iterator> reverse_const_iterator;
+	typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 	//end of iterators
-	block_vector() : length(0), blocks_count(0), blocks(0) {
-		resize_blocks(1);
-	};
+
+	block_vector() : length(0), blocks_count(1), HEAD(new block()), TAIL(HEAD) { };
 	block_vector(self_type const & bv) : blocks_count(bv.blocks_count), length(bv.length) {
-		resize_blocks(blocks_count);
-		std::copy(&bv.blocks[0], &bv.blocks[blocks_count], blocks);
+		HEAD = new block(*bv.HEAD);
+		block* current_bv = bv.HEAD->next;
+		block* current = HEAD;
+		while(current_bv) {
+			current->next = new block(*current_bv);
+			current->next->prev = current;
+			current = current->next;
+			current_bv = current_bv->next;
+		}
 	}
 	~block_vector() {
-		delete[] blocks;
+		HEAD->activate_self_destruct();
+		delete HEAD;
 	}
 
 	reference front() const {
-		return blocks[0].front();
+		return HEAD->front();
 	}
-
 	void push_back(const T & val) {
 		try {
-			blocks[blocks_count - 1].push_back(val);
+			TAIL->push_back(val);
 		}
 		catch (OverloadBlockException) {
-			resize_blocks(blocks_count + 1);
-			blocks[blocks_count - 2].next = &blocks[blocks_count - 1];
-			blocks[blocks_count - 1].prev = &blocks[blocks_count - 2];
-			blocks[blocks_count - 1].push_back(val);
+			TAIL->next = new block();
+			TAIL->next->prev = TAIL;
+			TAIL = TAIL->next;
+			TAIL->push_back(val);
+		}
+		catch (...) {
+			throw;
 		}
 		length++;
 	}
-
 	void pop_front() {
 		try {
-			blocks[0].pop_front();
+			HEAD->pop_front();
 		}
 		catch (EmptyBlockException) {
-			block* newblocks = new block[blocks_count-1];
-			std::copy(&blocks[1], &blocks[blocks_count], newblocks);
-			newblocks[0].prev = 0;
-			delete[] blocks;
-			blocks = newblocks;
-			blocks_count--;
+			HEAD = HEAD->next;
+			delete HEAD->prev;
 		}
 		catch (...) {
 			throw;
@@ -550,44 +582,56 @@ public:
 			throw OutOfBoundsException();
 
 		int accumulator = 0;
-		int current_block_index = 0;
-		while (accumulator + blocks[current_block_index].count < i) {
-			accumulator += blocks[current_block_index++].count;
+		block* current = HEAD;
+		while(current->count + accumulator < i) {
+			accumulator += current->count;
+			current = current->next;
 		}
 		int target_index = i - accumulator;
 		try {
-			blocks[current_block_index].insert(val, target_index);
+			current->insert(val, target_index);
 		}
 		catch (OverloadBlockException) {
-			insert_new_block(current_block_index + 1);
-			std::copy(&blocks[current_block_index][target_index+1],
-					  &blocks[current_block_index][block::MAXCOUNT],
-					  &blocks[current_block_index + 1].array[0]);
-			blocks[current_block_index].count = target_index + 1;
-			blocks[current_block_index+1].count = block::MAXCOUNT - target_index - 1;
-			blocks[current_block_index].insert(val, target_index);
+			current->next = new block(current->next, current);
+			blocks_count++;
+			if (current == TAIL)
+				TAIL = current->next;
+			block* reserve = current->next;
+			if (reserve->next) {
+				reserve->next->prev = reserve;
+			}
+			std::copy(&current->array[target_index], &current->last(), &reserve->array[0]);
+			current->count = target_index;
+			reserve->count = block::MAXCOUNT - target_index;
+			current->insert(val, target_index);
 		}
 		catch (...) {
 			throw;
 		}
 		length++;
 	}
-
 	void remove_at(const int i) {
+		//guard clause
 		if (i > length || i < 0)
 			throw OutOfBoundsException();
 
 		int accumulator = 0;
-		int current_block_index = 0;
-		while (accumulator + blocks[current_block_index].count < i) {
-			accumulator += blocks[current_block_index++].count;
+		block* current = HEAD;
+		while(current->count + accumulator < i) {
+			accumulator += current->count;
+			current = current->next;
 		}
-
+		int target_index = i - accumulator;
 		try {
-			blocks[current_block_index].remove_at(i - accumulator);
+			current->remove_at(target_index);
 		}
 		catch (EmptyBlockException) {
-			throw "NOT IMPLEMENTED";
+			if (current == HEAD)
+				HEAD = HEAD->next;
+			if (current == TAIL)
+				TAIL = TAIL->prev;
+			delete current;
+			blocks_count--;
 		}
 		catch (...) {
 			throw;
@@ -597,34 +641,34 @@ public:
 
 	// begin of iterator references
 	iterator begin() {
-		return iterator(&blocks[0].front(), 0, &blocks[0]);
+		return iterator(HEAD->array, 0, HEAD);
 	}
 	iterator end() {
-		return iterator(&last_block()->last(), last_block()->count, last_block());
+		return iterator(&TAIL->last(), TAIL->count, TAIL);
 	}
 	const_iterator begin() const {
-		return const_iterator(&blocks[0].front(), 0, &blocks[0]);
+		return const_iterator(HEAD->array, 0, HEAD);
 	}
 	const_iterator end() const {
-		return const_iterator(&last_block()->last(), last_block()->count, last_block());
+		return const_iterator(&TAIL->last(), TAIL->count, TAIL);
 	}
 	const_iterator cbegin() {
-		return const_iterator(blocks[0].front(), 0, &blocks[0]);
+		return const_iterator(HEAD->array, 0, HEAD);
 	}
 	const_iterator cend() {
-		return const_iterator(&last_block()->last(), last_block()->count, last_block());
+		return const_iterator(&TAIL->last(), TAIL->count, TAIL);
 	}
 	reverse_iterator rbegin() {
-		return reverse_iterator(end() - 1);
+		return reverse_iterator(end());
 	}
 	reverse_iterator rend() {
-		return reverse_iterator(begin() - 1);
+		return reverse_iterator(begin());
 	}
-	reverse_const_iterator rcbegin() {
-		return reverse_const_iterator(end() - 1);
+	const_reverse_iterator rcbegin() {
+		return const_reverse_iterator(cend());
 	}
-	reverse_const_iterator rcend() {
-		return reverse_const_iterator(begin() - 1);
+	const_reverse_iterator rcend() {
+		return const_reverse_iterator(cbegin());
 	}
 	// end of iterator references
 
@@ -657,79 +701,104 @@ public:
 		return length == 0;
 	}
 private:
-	block* blocks = 0;
+	block* HEAD = 0;
+	block* TAIL = 0;
 	int blocks_count = 0;
 	int length = 0;
-	void resize_blocks(int newsize) {
-		block* newblocks = new block[newsize];
-		if (newsize < blocks_count) {
-			for (int i = newsize; i < length; i++) {
-				delete &blocks[i];
-			}
-			std::copy(&blocks[0], &blocks[newsize], newblocks);
-		}
-		else {
-			std::copy(&blocks[0], &blocks[blocks_count], newblocks);
-		}
-		delete[] blocks;
-		blocks = newblocks;
-		blocks_count = newsize;
-	}
-
-	void insert_new_block(int pos) {
-		block* newblocks = new block[blocks_count + 1];
-		std::copy(&blocks[0], &blocks[pos], &newblocks[0]);
-		std::copy(&blocks[pos], last_block() + 1, &newblocks[pos+1]);
-		newblocks[pos].next = pos < blocks_count ? &newblocks[pos+1] : 0;
-		newblocks[pos].prev = pos > 0 ? &newblocks[pos-1] : 0;
-		if (pos < blocks_count) newblocks[pos+1].prev = &newblocks[pos];
-		if (pos > 0) newblocks[pos-1].next = &newblocks[pos];
-		delete[] blocks;
-		blocks = newblocks;
-		blocks_count++;
-	}
 
 	block* last_block() const {
-		return &blocks[blocks_count - 1];
+		return TAIL;
 	}
 }; // end of block_vector class
 
 int main(int argc, const char * argv[]) {
+	// init
 	block_vector<int> bv;
+
+	// test1
 	for (int i = 0; i < 15; i++) {
 		bv.push_back(i);
 	}
 	std::cout << "PUSH BACK TEST COMPLETE" << std::endl;
+
+	// test2
 	for (int i = 0; i < 15; i++) {
-		printf("%d\n", bv[i]);
+		printf("%d ", bv[i]);
 	}
-	std::cout << "[]OPERATOR TEST COMPLETE" << std::endl;
+	std::cout << std::endl << "[]OPERATOR TEST COMPLETE" << std::endl;
+
+	// test3
 	for (int i = 0; i < 12; i++) {
 		bv.pop_front();
 	}
-	std::cout << "POP_FRONT TEST COMPLETE" << std::endl;
+	std::cout << std::endl << "POP_FRONT TEST COMPLETE" << std::endl;
+
+	// test4
 	std::for_each(bv.begin(), bv.end(), [](int x) {
-		printf("%d\n", x);
+		printf("%d ", x);
 	});
-	std::cout << "BEGIN(), END() ITERATORS TEST COMPLETE" << std::endl;
+	std::cout << std::endl << "BEGIN(), END() ITERATORS TEST COMPLETE" << std::endl;
+
+	// test5
 	for (int i = 0; i < 20; i++) {
 		bv.insert(i, 2);
 	}
 	for (int i = 0; i < 10; i++) {
 		bv.insert(i, 5);
 	}
-
-	std::cout << "INSERT() TEST COMPLETE" << std::endl;
 	std::for_each(bv.begin(), bv.end(), [](int x) {
-		printf("%d\n", x);
+		printf("%d ", x);
 	});
+	std::cout << std::endl << "INSERT() TEST COMPLETE" << std::endl;
 
+	// test6
+	for (int i = 0; i < 20; i++) {
+		bv.remove_at(5);
+	}
+	std::for_each(bv.begin(), bv.end(), [](int x) {
+		std::cout << x << " ";
+	});
+	std::cout << std::endl << "REMOVE_AT() TEST COMPLETE" << std::endl;
+
+	// test7
+	std::cout << std::endl;
+	auto i = bv.begin();
+	for (; i < bv.end(); i++) {
+		std::cout << *i << " ";
+	}
+	std::cout << std::endl << "COMPARISON OPERATORS TEST COMPLETE" << std::endl;
+
+	std::cout << "DEBUG" << std::endl;
+	for (int i = 0; i < bv.size(); i++) std::cout << bv[i] << " ";
+	std::cout << std::endl << "END OF DEBUG" << std::endl;
+
+	// test8
+	std::cout << "VALUES MUST BE EQUAL:" << std::endl;
+	std::cout << "FIFTH ELEMENT: " << *(bv.begin() + 5) << " AND " << bv[5] << std::endl; // 5th element
+	std::cout << "VALUES MUST BE EQUAL:" << std::endl;
+	std::cout << "LAST ELEMENT: " << *(bv.end() - 1) << " AND " << bv[bv.size() - 1] << std::endl; // last element
+
+	// test9 TODO: WHY SORT DOES NOT WORK?!
+	std::sort(bv.begin(), bv.end());
+	std::for_each(bv.begin(), bv.end(), [](int x) {
+		std::cout << x << " ";
+	});
+	std::cout << std::endl << "SORT ALGORITHMS TEST COMPLETE" << std::endl;
 
 	block_vector<double> dbv;
 
 	std::transform(bv.begin(), bv.end(), std::back_inserter(dbv), [](int x) -> double {
 		return x * 0.2;
 	});
+	std::for_each(dbv.begin(), dbv.end(), [](double x) {
+		std::cout << x << " ";
+	});
+	std::cout << std::endl;
 	std::cout << "TRANSFORMATION TEST COMPLETE" << std::endl;
-	bv[0];
+
+	auto ri = bv.rbegin();
+	for(; ri != bv.rend(); ++ri) {
+		std::cout << *ri << " ";
+	}
+	std::cout << std::endl << "REVERSE ITERATOR TEST COMPLETE" << std::endl;
 }
